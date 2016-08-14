@@ -1,0 +1,85 @@
+from flask import render_template,flash,redirect, session, url_for, request, g
+from flask_login import login_user, logout_user, current_user, login_required
+from app import app, db, lm, oid
+#render_template此函数需要传入模板名以及一些模板变量列表，返回一个所有变量被替换的渲染的模板。
+from .forms import LoginForm #从forms中导入LoginForm类
+from .models import User
+
+@lm.user_loader
+def load_user(id):
+    return User.query.get(int(id))
+    #Flask-Login 中的用户 ids 永远是 unicode 字符串，因此在我们把 id 发送
+    # 给 Flask-SQLAlchemy 之前，把 id 转成整型是必须的，否则会报错！
+@app.before_request#任何使用了 before_request 装饰器的函数在接收请求之前都会运行。
+def before_request():
+    g.user = current_user
+    #全局变量 current_user 是被 Flask-Login 设置的，因此我们只需要把它赋给 g.user ，
+    # 让访问起来更方便。有了这个，所有请求将会访问到登录用户，即使在模版里。
+@app.route('/')
+@app.route('/index')#路径是以上两种就调用index函数
+@login_required#确保这页只被已登录的用户看到
+def index():
+    user = g.user
+    posts = [
+        {
+            'author': { 'nickname': 'John' },
+            'body': 'Beautiful day in Portland!'
+        },
+        {
+            'author': { 'nickname': 'Susan' },
+            'body': 'The Avengers movie was so cool!'
+        }
+    ]
+    return render_template('index.html',
+        title = 'Home',
+        user = user,
+        posts = posts)
+
+@app.route('/login', methods = ['GET', 'POST'])
+#methods参数告诉 Flask 这个视图函数接受 GET 和 POST 请求。如果不带参数的话，视图只接受 GET 请求。
+@oid.loginhandler
+#oid.loginhandle 告诉 Flask-OpenID 这是我们的登录视图函数。
+def login():
+    if g.user is not None and g.user.is_authenticated:
+        #g 全局变量是一个在请求生命周期中用来存储和共享数据,我们将登录的用户存储在这里(g)
+        #检查 g.user 是否被设置成一个认证用户，如果是的话将会被重定向到首页。
+        #这里的想法是如果是一个已经登录的用户的话，就不需要二次登录了。
+        return redirect(url_for('index'))
+        #url_for 函数是定义在 Flask 中，以一种干净的方式为一个给定的视图函数获取 URL
+    form = LoginForm()
+    if form.validate_on_submit():#执行表单处理工作，如果正在显示，会返回false
+        session['remember_me'] = form.remember_me.data
+        return oid.try_login(form.openid.data, ask_for=['nickname', 'email'])
+    #触发用户使用Flask-OpenID认证，一个是从OpenID提供商得到的数据项列表，
+    #因为我们已经在用户模型类中定义了 nickname 和 email，这也是我们将要从 OpenID 提供商索取的。
+    return render_template('login.html',
+        title = 'Sign In',
+        form = form,
+        providers=app.config['OPENID_PROVIDERS'])
+#OpenID 认证异步发生。如果认证成功的话，Flask-OpenID 将会调用一个注册了 oid.after_login 装饰器的函数。
+# 如果失败的话，用户将会回到登陆页面。
+@oid.after_login
+def after_login(resp):
+    if resp.email is None or resp.email=="":
+        # 没有提供邮箱地址是不能登陆的
+        flash('Invalid login.Please try again.')
+        return redirect(url_for('login'))#重定向到登录页
+    user=User.query.filter_by(email=resp.email).first()
+    #first返回该查询的第一结果或者None，filter_by条件查询
+    if user is None:
+        nickname=resp.nickname#如果邮箱地址不在数据库中，则认为是一个新用户，下面添加新用户
+    if nickname is None or nickname == "":
+        nickname=resp.email.split('@')[0]#处理方式，将邮箱@前面当做新用户的昵称，并创建新用户
+        user=User(nickname=nickname,email=resp.email)
+        db.session.agg(user)
+        db.session.commit()
+    remember_me = False
+    if 'remember_me' in session:#session以字典形式存储指令
+        remember_me=session['remember_me']#如果命令更改了remember_me,则存储并且从命令中删除
+        session.pop('remember_me',None)#从dict中删除一组，如果键值不存在则返回default(这里是None)
+    login_user(user,remember_me=remember_me)#为了注册这个有效的登录，我们调用 Flask-Login 的 login_user 函数。
+    return redirect(request.args.get('next') or url_for('index'))#如果没有提供next也，则重定向到首页，否则重定向到next页
+@app.route('/logout')
+def logout():
+    logout_user()
+    return redirect(url_for('index'))
