@@ -1,0 +1,21 @@
+#Flask通过Python的装饰器在内部自动地把URL和函数给关联起来
+from flask import Flask
+from flask_sqlalchemy import SQLAlchemy
+app=Flask(__name__)
+#Flask类的构造函数只有一个必须指定的参数，即程序主模块或包的名字。
+#在大多数程序中，__name__变量就是一所需的值
+app.config.from_object('config')#Flask应用程序app创建以后执行配置工作
+db=SQLAlchemy(app)#初始化数据库
+
+#创建应用对象，导入视图模块
+import os
+from flask_login import LoginManager
+from flask_openid import OpenID
+from config import basedir
+lm=LoginManager()
+lm.init_app(app)#登录管理者
+lm.login_view = 'login'#哪个视图允许登录
+
+oid=OpenID(app,os.path.join(basedir,'tmp'))#tmp文件夹的路径
+from app import views,models
+#要等lm编译过后再import views，否则在views里lm会导入失败
