@@ -1,6 +1,7 @@
 from flask_wtf import Form
-from wtforms import StringField, BooleanField
-from wtforms.validators import DataRequired
+from wtforms import StringField, BooleanField,TextAreaField
+from wtforms.validators import DataRequired,Length
+from app.models import User
 #导入两个需要的字段类
 class LoginForm(Form):
     openid = StringField('openid', validators=[DataRequired()])
@@ -12,3 +13,23 @@ class LoginForm(Form):
     #我们将在表单上提供一个 ‘rememberme’ 的选择框，
     #以至于用户可以选择在他们的网页浏览器上种植
     #cookie ，当他们再次访问的时候，浏览器能够记住他们的登录。
+class EditForm(Form):
+    nickname=StringField('nickkname',validators=[DataRequired()])
+    about_me=TextAreaField('about_me',validators=[Length(min=0, max=140)])
+
+    def __init__(self, original_nickname, *args, **kwargs):
+        Form.__init__(self, *args, **kwargs)
+        self.original_nickname = original_nickname
+
+    def validate(self):
+        #validate 方法使用它来决定昵称什么时候更改过
+        #如果没有发生更改就接受它。如果已经发生更改的话，确保昵称在数据库是唯一的。
+        if not Form.validate(self):
+            return False
+        if self.nickname.data == self.original_nickname:
+            return True
+        user = User.query.filter_by(nickname=self.nickname.data).first()
+        if user != None:
+            self.nickname.errors.append('This nickname is already in use. Please choose another one.')
+            return False
+        return True
