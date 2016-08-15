@@ -1,6 +1,7 @@
 #Flask通过Python的装饰器在内部自动地把URL和函数给关联起来
-from flask import Flask
+from flask.__init__ import Flask
 from flask_sqlalchemy import SQLAlchemy
+
 app=Flask(__name__)
 #Flask类的构造函数只有一个必须指定的参数，即程序主模块或包的名字。
 #在大多数程序中，__name__变量就是一所需的值
@@ -11,7 +12,7 @@ db=SQLAlchemy(app)#初始化数据库
 import os
 from flask_login import LoginManager
 from flask_openid import OpenID
-from config import basedir
+from config import basedir,ADMINS, MAIL_SERVER, MAIL_PORT, MAIL_USERNAME, MAIL_PASSWORD
 lm=LoginManager()
 lm.init_app(app)#登录管理者
 lm.login_view = 'login'#哪个视图允许登录
@@ -19,3 +20,21 @@ lm.login_view = 'login'#哪个视图允许登录
 oid=OpenID(app,os.path.join(basedir,'tmp'))#tmp文件夹的路径
 from app import views,models
 #要等lm编译过后再import views，否则在views里lm会导入失败
+if not app.debug:
+    import logging
+    from logging.handlers import SMTPHandler
+    credentials = None
+    if MAIL_USERNAME or MAIL_PASSWORD:
+        credentials = (MAIL_USERNAME, MAIL_PASSWORD)
+    mail_handler = SMTPHandler((MAIL_SERVER, MAIL_PORT), 'no-reply@' + MAIL_SERVER, ADMINS, 'microblog failure', credentials)
+    mail_handler.setLevel(logging.ERROR)
+    app.logger.addHandler(mail_handler)
+    #记录到文件
+    from logging.handlers import RotatingFileHandler
+    file_handler = RotatingFileHandler('tmp/microblog.log', 'a', 1 * 1024 * 1024, 10)
+    #日志大小限制在1兆，保留最后10个作为备份
+    file_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'))
+    app.logger.setLevel(logging.INFO)
+    file_handler.setLevel(logging.INFO)
+    app.logger.addHandler(file_handler)
+    app.logger.info('microblog startup')
