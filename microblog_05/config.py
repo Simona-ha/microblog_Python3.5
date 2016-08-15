@@ -17,3 +17,11 @@ SQLALCHEMY_MIGRATE_REPO=os.path.join(basedir,'db_repository')#SQLALCHEMY_MIGRATE
 SQLALCHEMY_TRACK_MODIFICATIONS=True
 #仓库也存储在basedir中
 #  我们将会把 SQLAlchemy-migrate 数据文件存储在这里。
+# mail server settings
+MAIL_SERVER = 'localhost'
+MAIL_PORT = 25
+MAIL_USERNAME = None
+MAIL_PASSWORD = None
+
+# administrator list
+ADMINS = ['you@example.com']
