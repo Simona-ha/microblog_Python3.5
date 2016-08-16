@@ -90,6 +90,9 @@ def after_login(resp):
         user=User(nickname=nickname,email=resp.email)
         db.session.agg(user)
         db.session.commit()
+        # make the user follow him/herself
+        db.session.add(user.follow(user))
+        db.session.commit()
     remember_me = False
     if 'remember_me' in session:#session以字典形式存储指令
         remember_me=session['remember_me']#如果命令更改了remember_me,则存储并且从命令中删除
@@ -141,3 +144,41 @@ def internal_error(error):
     #如果异常是被一个数据库错误触发，数据库的会话会处于一个不正常的状态，
     # 因此我们必须把会话回滚到正常工作状态在渲染 500 错误页模板之前。
     return render_template('500.html'),500
+@app.route('/follow/<nickname>')
+@login_required
+def follow(nickname):
+    user = User.query.filter_by(nickname=nickname).first()#昵称是nickname的user
+    if user is None:
+        flash('User %s not found.' % nickname)
+        return redirect(url_for('index'))
+    #通过其他途径访问到了nickname的页面，但是系统记住的登入用户仍然是g.user
+    if user == g.user:
+        flash('You can\'t follow yourself!')
+        return redirect(url_for('user', nickname=nickname))#仍然返回nickname的用户页面
+    u = g.user.follow(user)#提出请求的user（g.user），想要关注的user
+    if u is None:
+        flash('Cannot follow ' + nickname + '.')
+        return redirect(url_for('user', nickname=nickname))
+    db.session.add(u)
+    db.session.commit()
+    flash('You are now following ' + nickname + '!')
+    return redirect(url_for('user', nickname=nickname))
+
+@app.route('/unfollow/<nickname>')
+@login_required
+def unfollow(nickname):
+    user = User.query.filter_by(nickname=nickname).first()
+    if user is None:
+        flash('User %s not found.' % nickname)
+        return redirect(url_for('index'))
+    if user == g.user:
+        flash('You can\'t unfollow yourself!')
+        return redirect(url_for('user', nickname=nickname))
+    u = g.user.unfollow(user)
+    if u is None:
+        flash('Cannot unfollow ' + nickname + '.')
+        return redirect(url_for('user', nickname=nickname))
+    db.session.add(u)
+    db.session.commit()
+    flash('You have stopped following ' + nickname + '.')
+    return redirect(url_for('user', nickname=nickname))
