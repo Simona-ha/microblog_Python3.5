@@ -1,5 +1,10 @@
 from app import db
 import hashlib
+followers = db.Table('followers',
+    db.Column('follower_id', db.Integer, db.ForeignKey('user.id')),
+    db.Column('followed_id', db.Integer, db.ForeignKey('user.id'))
+)
+
 class User(db.Model):
     #字段是被作为 db.Column 类的实例创建的，db.Column 把字段的类型作为参数，
     # 并且还有一些其它可选的参数，比如表明字段是否唯一。
@@ -9,6 +14,16 @@ class User(db.Model):
     posts=db.relationship('Post',backref='author',lazy='dynamic')
     about_me = db.Column(db.String(140))#用户的自我说明
     last_seen = db.Column(db.DateTime)
+    #左边的用户关注着右边的用户，左边的用户定义为followed
+    followed=db.relationship('User',#User是这种关系右边的表
+        secondary=followers,#secondary指明了这种关系的辅助表
+        primaryjoin=(followers.c.follower_id==id),
+        #表示辅助表中连接左边实体(发起关注的用户)的条件。
+        #注意因为 followers 表不是一个模式，获得字段名的语法有些怪异。
+        secondaryjoin=(followers.c.followed_id == id),
+        # 表示辅助表中连接右边实体(被关注的用户)的条件。
+        backref=db.backref('followers',lazy='dynamic'),
+        lazy='dynamic')
     def is_authenticated(self):
         return True
     #is_authenticated 方法有一个具有迷惑性的名称。一般而言，这个方法应该只返回 True，除非表示用户的对象因为某些原因不允许被认证。
@@ -47,7 +62,26 @@ class User(db.Model):
                 break
             version += 1
         return new_nickname
+    def follow(self,user):
+        if not self.is_following(user):
+            self.followed.append(user)
+            return self
+        else:
+            return None
+    def unfollow(self,user):
+        if self.is_following(user):
+            self.followed.remove(user)
+            return self
+        else:
+            return None
+    def is_following(self,user):
+        return self.followed.filter(followers.c.followed_id==user.id).count()>0
 
+    def followed_posts(self):
+        return Post.query.join(followers, (followers.c.followed_id == Post.user_id)).filter(\
+            followers.c.follower_id == self.id).order_by(Post.timestamp.desc())
+    #连接操作所做的就是创建一个数据来自于 Post 和 followers 表的临时新的表，根据给定条件进行整合。
+    #给定条件是followers表中的被关注着id和postid一致，再通过关注者id和当前id过滤，得到当前id关注的id的post
 class Post(db.Model):
     id=db.Column(db.Integer,primary_key=True)
     body=db.Column(db.String(140))
